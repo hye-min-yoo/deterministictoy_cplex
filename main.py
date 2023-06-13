@@ -4,6 +4,7 @@ from utils import *
 from input import *
 from datetime import datetime
 import cplex
+import numpy
 
 model=cplex.Cplex()
 model.parameters.read.datacheck.set(model.parameters.read.datacheck.values.off)
