@@ -6,6 +6,7 @@ from datetime import datetime
 import cplex
 import numpy
 
+
 model=cplex.Cplex()
 model.parameters.read.datacheck.set(model.parameters.read.datacheck.values.off)
 
@@ -13,6 +14,7 @@ model.objective.set_sense(model.objective.sense.minimize)
 
 cost, arc,m_arc, nm_arc, p_arc = generate_connection(num_leg,num_airport, c, dep_t,arr_t,dep_s,arr_s,turn, sit, penalty, maintenance, m_time,horizon)
 
+print("num_leg",num_leg)
 
 y=[]
 X=[]
@@ -51,7 +53,14 @@ lhs = [
     cplex.SparsePair(ind=[y[2][dep_s[2] + num_leg - 1][2]], val=[1.0])
 ]
 rhs = [1.0, 1.0, 1.0]
-model.linear_constraints.add(lin_expr=lhs, senses=["E", "E", "E"], rhs=rhs)
+model.linear_constraints.add(lin_expr=lhs, senses=["G", "G", "G"], rhs=rhs)
+lhs = [
+    cplex.SparsePair(ind=[y[0][ dep_s[0] + num_leg - 1][0]], val=[-1.0]),
+    cplex.SparsePair(ind=[y[1][dep_s[1] + num_leg - 1][1]], val=[-1.0]),
+    cplex.SparsePair(ind=[y[2][dep_s[2] + num_leg - 1][2]], val=[-1.0])
+]
+rhs = [-1.0, -1.0, -1.0]
+model.linear_constraints.add(lin_expr=lhs, senses=["G", "G", "G"], rhs=rhs)
 
 # formulation의 symmetry를 제거하기 위한 제약
 for i in range(num_aircraft - 1):
@@ -70,7 +79,11 @@ for j in range(num_leg):
             temp.append([j, k])
     lhs = [cplex.SparsePair(ind=[y[i][temp[k][0]][temp[k][1]] for i in range(num_aircraft) for k in range(len(temp))], val=[1.0]*len(temp)*num_aircraft)]
     rhs = [1.0]
-    model.linear_constraints.add(lin_expr=lhs, senses=["E"], rhs=rhs)
+    model.linear_constraints.add(lin_expr=lhs, senses=["G"], rhs=rhs)
+    lhs = [cplex.SparsePair(ind=[y[i][temp[k][0]][temp[k][1]] for i in range(num_aircraft) for k in range(len(temp))],
+                            val=[-1.0] * len(temp) * num_aircraft)]
+    rhs = [-1.0]
+    model.linear_constraints.add(lin_expr=lhs, senses=["G"], rhs=rhs)
 
 # con2 : flow continuity
 for i in range(num_aircraft):
@@ -84,7 +97,11 @@ for i in range(num_aircraft):
                 temp2.append([k, j])
         lhs = cplex.SparsePair(ind=[y[i][j][temp1[k][1]] for k in range(len(temp1))]+[y[i][temp2[k][0]][j] for k in range(len(temp2))], val=[1.0]*len(temp1)+[-1.0] * len(temp2))
         rhs = [0.0]
-        model.linear_constraints.add(lin_expr=[lhs], senses=["E"], rhs=rhs)
+        model.linear_constraints.add(lin_expr=[lhs], senses=["G"], rhs=rhs)
+        lhs = cplex.SparsePair(
+            ind=[y[i][j][temp1[k][1]] for k in range(len(temp1))] + [y[i][temp2[k][0]][j] for k in range(len(temp2))],
+            val=[-1.0] * len(temp1) + [1.0] * len(temp2))
+        model.linear_constraints.add(lin_expr=[lhs], senses=["G"], rhs=rhs)
 
 # con3 : 모든 항공기는 시작한 공항에서 끝날 것
 for i in range(num_aircraft):
@@ -103,11 +120,16 @@ for i in range(num_aircraft):
                 temp2.append([k, j + num_leg + num_airport])
         lhs = [cplex.SparsePair(ind=[y[i][temp1[j][0]][temp1[j][1]] for j in range(len(temp1))]+[y[i][temp2[k][0]][temp2[k][1]] for k in range(len(temp2))], val=[1.0]*len(temp1)+[-1.0]*len(temp2))]
         rhs = [0.0]
-        model.linear_constraints.add(lin_expr=lhs, senses=["E"], rhs=rhs)
+        model.linear_constraints.add(lin_expr=lhs, senses=["G"], rhs=rhs)
+        lhs = [cplex.SparsePair(
+            ind=[y[i][temp1[j][0]][temp1[j][1]] for j in range(len(temp1))] + [y[i][temp2[k][0]][temp2[k][1]] for k in
+                                                                               range(len(temp2))],
+            val=[-1.0] * len(temp1) + [1.0] * len(temp2))]
+        model.linear_constraints.add(lin_expr=lhs, senses=["G"], rhs=rhs)
     #모든 항공기는 최대 하나의 공항을 통해 나갈 수 있다.
-    lhs = [cplex.SparsePair(ind=[y[i][temp[j][0]][temp[j][1]] for j in range(len(temp))], val=[1.0]*len(temp))]
-    rhs = [1.0]
-    model.linear_constraints.add(lin_expr=lhs, senses=["L"], rhs=rhs)
+    lhs = [cplex.SparsePair(ind=[y[i][temp[j][0]][temp[j][1]] for j in range(len(temp))], val=[-1.0]*len(temp))]
+    rhs = [-1.0]
+    model.linear_constraints.add(lin_expr=lhs, senses=["G"], rhs=rhs)
 
 
 # con4 : maintenance constraint
@@ -122,45 +144,45 @@ for i in range(num_aircraft):
     for j, k in arc:
         if k < num_leg:
             # Constraint 1
-            lhs = cplex.SparsePair(ind=[X[i][j][k], R[i][j][k],y[i][j][k]], val=[1.0, 1.0, -MTOTW])
+            lhs = cplex.SparsePair(ind=[X[i][j][k], R[i][j][k],y[i][j][k]], val=[-1.0, -1.0, MTOTW])
             rhs = [0]
-            model.linear_constraints.add(lin_expr=[lhs], senses=["L"], rhs=rhs)
+            model.linear_constraints.add(lin_expr=[lhs], senses=["G"], rhs=rhs)
 
             lhs = cplex.SparsePair(ind=[X[i][j][k], R[i][j][k], y[i][j][k]],
-                                   val=[1.0, 1.0, -TANK])
+                                   val=[-1.0, -1.0, TANK])
             rhs = [0]
-            model.linear_constraints.add(lin_expr=[lhs], senses=["L"], rhs=rhs)
+            model.linear_constraints.add(lin_expr=[lhs], senses=["G"], rhs=rhs)
 
             # Constraint 2
-            lhs = [cplex.SparsePair(ind=[X[i][j][k], R[i][j][k],y[i][j][k]], val=[1.0 - a, 1.0 - a,-MLTW])]
-            rhs = [compute_tripfuel(tripfuel_array, dep_s,arr_s,k,num_leg)*(1-a)]
-            model.linear_constraints.add(lin_expr=lhs, senses=["L"], rhs=rhs)
+            lhs = [cplex.SparsePair(ind=[X[i][j][k], R[i][j][k],y[i][j][k]], val=[-1.0 + a, -1.0 + a,MLTW])]
+            rhs = [compute_tripfuel(tripfuel_array, dep_s,arr_s,k,num_leg)*(a-1)]
+            model.linear_constraints.add(lin_expr=lhs, senses=["G"], rhs=rhs)
 
             # Constraint 3
-            lhs = [cplex.SparsePair(ind=[X[i][j][k], R[i][j][k],y[i][j][k]], val=[(1.0 - a), (1.0 - a),-(SF[k]+(1-a)*compute_tripfuel(tripfuel_array, dep_s, arr_s, k, num_leg))])]
+            lhs = [cplex.SparsePair(ind=[X[i][j][k], R[i][j][k],y[i][j][k]], val=[(1.0 - a), (1.0 - a),(-SF[k]+(1-a)*compute_tripfuel(tripfuel_array, dep_s, arr_s, k, num_leg))])]
             rhs = [0]
             model.linear_constraints.add(lin_expr=lhs, senses=["G"], rhs=rhs)
 
             # Constraint 4
-            lhs = [cplex.SparsePair(ind=[X[i][j][k],y[i][j][k] ], val=[1.0,-TANK])]
+            lhs = [cplex.SparsePair(ind=[X[i][j][k],y[i][j][k] ], val=[-1.0,TANK])]
             rhs = [0]
-            model.linear_constraints.add(lin_expr=lhs, senses=["L"], rhs=rhs)
+            model.linear_constraints.add(lin_expr=lhs, senses=["G"], rhs=rhs)
 
-            lhs = [cplex.SparsePair(ind=[R[i][j][k], y[i][j][k]], val=[1.0, -TANK])]
-            model.linear_constraints.add(lin_expr=lhs, senses=["L"], rhs=rhs)
+            lhs = [cplex.SparsePair(ind=[R[i][j][k], y[i][j][k]], val=[-1.0, TANK])]
+            model.linear_constraints.add(lin_expr=lhs, senses=["G"], rhs=rhs)
 
             #balance equation
             temp = []
             for l in range(num_node):
                 if [k, l] in arc:
                     temp.append([k, l])
-            lhs=[cplex.SparsePair(ind=[X[i][j][k],R[i][j][k],y[i][j][k]]+[R[i][p][q] for p,q in temp], val=[1-a,1-a,-(1-a)*compute_tripfuel(tripfuel_array, dep_s, arr_s, k, num_leg)]+[-1]*len(temp))]
+            lhs=[cplex.SparsePair(ind=[X[i][j][k],R[i][j][k],y[i][j][k]]+[R[i][p][q] for p,q in temp], val=[-1+a,-1+a,(1-a)*compute_tripfuel(tripfuel_array, dep_s, arr_s, k, num_leg)]+[1]*len(temp))]
             rhs = [0]
-            model.linear_constraints.add(lin_expr=lhs, senses=["L"], rhs=rhs)
+            model.linear_constraints.add(lin_expr=lhs, senses=["G"], rhs=rhs)
 
 
             # Constraint 6
-            lhs = [cplex.SparsePair(ind=[X[i][j][k], R[i][j][k],y[i][j][k]]+[R[i][p][q] for p,q in temp], val=[1.0 - a, 1.0 - a,-M]+[-1]*len(temp))]
+            lhs = [cplex.SparsePair(ind=[X[i][j][k], R[i][j][k],y[i][j][k]]+[R[i][p][q] for p,q in temp], val=[1.0 -a, 1.0 - a,-M]+[-1]*len(temp))]
             rhs = [(1-a)*compute_tripfuel(tripfuel_array, dep_s, arr_s, k, num_leg)-M]
             model.linear_constraints.add(lin_expr=lhs, senses=["G"], rhs=rhs)
 
@@ -171,7 +193,9 @@ for i in range(num_aircraft):
             # Constraint
             lhs = [cplex.SparsePair(ind=[R[i][j][k]], val=[1.0])]
             rhs = [0.0]
-            model.linear_constraints.add(lin_expr=lhs, senses=["E"], rhs=rhs)
+            model.linear_constraints.add(lin_expr=lhs, senses=["G"], rhs=rhs)
+            lhs = [cplex.SparsePair(ind=[R[i][j][k]], val=[-1.0])]
+            model.linear_constraints.add(lin_expr=lhs, senses=["G"], rhs=rhs)
 
 
 
@@ -183,6 +207,54 @@ for i in range(num_aircraft):
 
 num_threads = model.get_num_cores()
 model.parameters.threads.set(num_threads)
+
+print("connum",model.variables.get_num())
+
+#making coefficient matrix
+var_num=num_aircraft*(num_node-num_airport)*num_node
+con_num=model.linear_constraints.get_num()
+
+pair=model.variables.get_cols()
+
+pair_y=pair[:var_num]
+pair_XR=pair[var_num:]
+
+coe_y=[[0]*var_num for _ in range(con_num)]
+coe_XR=[[0]*var_num*2 for _ in range(con_num)]
+
+
+for i in range(var_num):
+    temp_pair_y_ind=pair_y[i].ind
+    temp_pair_y_val = pair_y[i].val
+    for j in range(len(temp_pair_y_val)):
+        coe_y[temp_pair_y_ind[j]][i]=temp_pair_y_val[j]
+
+for i in range(var_num*2):
+    temp_pair_XR_ind = pair_XR[i].ind
+    temp_pair_XR_val = pair_XR[i].val
+    for j in range(len(temp_pair_XR_val)):
+        #print(temp_pair_y_val[j])
+        coe_XR[temp_pair_XR_ind[j]][i]=temp_pair_XR_val[j]
+
+
+#ABbCD 정의
+
+A=coe_XR
+B=coe_y
+b=model.linear_constraints.get_rhs()
+
+C=model.objective.get_linear()
+C=C[var_num:]
+D=[0]*var_num
+
+model2.linear_constraints.add(lhs=A,senses=["G"]*con_num,rhs=b)
+
+
+
+'''
+arrays = {'A': A, 'B': B, 'C': C, 'D': D, 'b': b}
+
+save_arrays_to_file('toy_input.dat', arrays)
 
 model.parameters.benders.strategy = 2
 model.cleanup(1e-6)
@@ -231,6 +303,6 @@ df = df[(df['y'] == 1)]
 now = datetime.now()
 file_name = f"Output_{now.strftime('%m%d')}_{'%02d' % now.hour}{'%02d' % now.minute}.xlsx"
 df.to_excel(file_name)
-
+'''
 # CPLEX 객체 종료
 model.end()
